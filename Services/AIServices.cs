@@ -55,16 +55,16 @@ public class AiServices
         }
 
         var translatedQuestion = await TranslateText(userQuestion, language.LanguageIso6391Name);
-        var answer = "";
+        string answer;
         if (language.LanguageIso6391Name != "en")
         {
-            var answerThatNeedsTranslation = Labb1Faq.AnswerFaq(translatedQuestion, language.LanguageIso6391Name);
+            var answerThatNeedsTranslation = Labb1Faq.AnswerFaq(translatedQuestion);
             answer = await TranslateText(answerThatNeedsTranslation, "en", language.LanguageIso6391Name);
 
         }
         else
         {
-            answer = Labb1Faq.AnswerFaq(translatedQuestion, language.LanguageIso6391Name);
+            answer = Labb1Faq.AnswerFaq(translatedQuestion);
         }
 
         Console.WriteLine(answer);
