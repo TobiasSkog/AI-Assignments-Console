@@ -3,10 +3,10 @@
 namespace AI_Assignments_Console.Assignment_2;
 public static class Labb2
 {
-    private static AiServices _ai = new();
+    private static readonly AiServices Ai = new();
 
-    public static async Task Run(int labChoice)
+    public static async Task Run(int assignmentChoice)
     {
-        Console.WriteLine("Hello from Labb2!");
+        await Ai.ConfigureAiServices(assignmentChoice);
     }
 }

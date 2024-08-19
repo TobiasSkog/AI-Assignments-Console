@@ -1,11 +1,14 @@
 ﻿using AI_Assignments_Console.Assignment_1;
 using AI_Assignments_Console.Helpers;
+using Microsoft.Azure.CognitiveServices.Vision.ComputerVision;
+using Microsoft.Azure.CognitiveServices.Vision.ComputerVision.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Web;
+using ImageType = AI_Assignments_Console.Helpers.ImageType;
 
 namespace AI_Assignments_Console.Services;
 
@@ -16,6 +19,7 @@ public class AiServices
     private string? _cogSvcRegion;
     private int _labChoice;
     private const string TranslatorEndpoint = "https://api.cognitive.microsofttranslator.com";
+    private static ComputerVisionClient? _cvClient;
 
     public async Task ConfigureAiServices(int assignmentChoice)
     {
@@ -31,12 +35,250 @@ public class AiServices
                 await ProcessUserQuestion("Ocp-Apim-Subscription-Key");
                 break;
             case 2:
-                await ProcessUserQuestion("Ocp-Apim-Subscription-Key");
+                await GetImageUrlFromUser();
                 break;
             default:
                 Console.WriteLine("Invalid lab choice!");
                 break;
         }
+    }
+
+    private async Task GetImageUrlFromUser()
+    {
+        _cvClient = new ComputerVisionClient(new ApiKeyServiceClientCredentials(_cogSvcKey))
+        {
+            Endpoint = _cogSvcEndpoint
+        };
+
+        while (true)
+        {
+            var userChoice = ValidationHelper.GetFilePathToImage("Please enter the path to the image you want to analyze (-1 to quit): ");
+            if (userChoice.url is "-1" or "")
+            {
+                return;
+            }
+            // Specify features to be retrieved
+            List<VisualFeatureTypes?> features =
+            [
+                VisualFeatureTypes.Description,
+                VisualFeatureTypes.Tags,
+                VisualFeatureTypes.Objects
+            ];
+
+            // Get image type
+            switch (userChoice.ImageType)
+            {
+                case ImageType.Local:
+                    await AnalyzeLocalImage(userChoice.url, features);
+                    await GetThumbnail(userChoice.url);
+
+                    break;
+                case ImageType.Online:
+                    await AnalyzeOnlineImage(userChoice.url, features);
+                    await GetThumbnailFromUrl(userChoice.url);
+
+                    break;
+                case ImageType.Exit:
+                default:
+                    Console.WriteLine("Invalid image type!");
+                    return;
+            }
+
+            Console.WriteLine("Press any key to continue...");
+            Console.ReadKey();
+        }
+    }
+
+    private static async Task AnalyzeLocalImage(string path, List<VisualFeatureTypes?> features)
+    {
+        using (var imageStream = File.OpenRead(path))
+        {
+            // Get image analysis
+            var analysis = await _cvClient.AnalyzeImageInStreamAsync(imageStream, features);
+
+            if (analysis.Description.Captions is { Count: > 0 })
+            {
+                // get image captions
+                foreach (var caption in analysis.Description.Captions)
+                {
+                    Console.WriteLine($"Description: {caption.Text} (confidence: {caption.Confidence:P})");
+                }
+            }
+
+            // Get image tags
+            if (analysis.Tags is { Count: > 0 })
+            {
+                Console.WriteLine("Tags:");
+                foreach (var tag in analysis.Tags)
+                {
+                    Console.WriteLine($" -{tag.Name} (confidence: {tag.Confidence:P})");
+                }
+            }
+
+            // Get image categories
+            List<LandmarksModel> landmarks = [];
+            Console.WriteLine("Categories:");
+            if (analysis.Categories is { Count: > 0 })
+            {
+                foreach (var category in analysis.Categories)
+                {
+                    // Print the category
+                    Console.WriteLine($" -{category.Name} (confidence: {category.Score:P})");
+
+                    // Get landmarks in this category
+                    if (category.Detail?.Landmarks != null)
+                    {
+                        foreach (var landmark in category.Detail.Landmarks)
+                        {
+                            if (landmarks.All(item => item.Name != landmark.Name))
+                            {
+                                landmarks.Add(landmark);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If there were landmarks, list them
+            if (landmarks is { Count: > 0 })
+            {
+                Console.WriteLine("Landmarks:");
+                foreach (var landmark in landmarks)
+                {
+                    Console.WriteLine($" -{landmark.Name} (confidence: {landmark.Confidence:P})");
+                }
+            }
+
+            // Get brands in the image
+            if (analysis.Brands is { Count: > 0 })
+            {
+                Console.WriteLine("Brands:");
+                foreach (var brand in analysis.Brands)
+                {
+                    Console.WriteLine($" -{brand.Name} (confidence: {brand.Confidence:P})");
+                }
+            }
+
+            // Get objects in the image
+            if (analysis.Objects is { Count: > 0 })
+            {
+                Console.WriteLine("Objects in image:");
+                foreach (var detectedObject in analysis.Objects)
+                {
+                    Console.WriteLine($" -{detectedObject.ObjectProperty} (confidence: {detectedObject.Confidence:P})");
+                }
+            }
+        }
+    }
+    private static async Task AnalyzeOnlineImage(string url, List<VisualFeatureTypes?> features)
+    {
+
+        // Get image analysis
+        var analysis = await _cvClient.AnalyzeImageAsync(url, features);
+
+        if (analysis.Description.Captions is { Count: > 0 })
+        {
+            // get image captions
+            foreach (var caption in analysis.Description.Captions)
+            {
+                Console.WriteLine($"Description: {caption.Text} (confidence: {caption.Confidence:P})");
+            }
+        }
+
+        // Get image tags
+        if (analysis.Tags is { Count: > 0 })
+        {
+            Console.WriteLine("Tags:");
+            foreach (var tag in analysis.Tags)
+            {
+                Console.WriteLine($" -{tag.Name} (confidence: {tag.Confidence:P})");
+            }
+        }
+
+        // Get image categories
+        List<LandmarksModel> landmarks = [];
+        Console.WriteLine("Categories:");
+        if (analysis.Categories is { Count: > 0 })
+        {
+            foreach (var category in analysis.Categories)
+            {
+                // Print the category
+                Console.WriteLine($" -{category.Name} (confidence: {category.Score:P})");
+
+                // Get landmarks in this category
+                if (category.Detail?.Landmarks != null)
+                {
+                    foreach (var landmark in category.Detail.Landmarks)
+                    {
+                        if (landmarks.All(item => item.Name != landmark.Name))
+                        {
+                            landmarks.Add(landmark);
+                        }
+                    }
+                }
+            }
+        }
+
+        // If there were landmarks, list them
+        if (landmarks is { Count: > 0 })
+        {
+            Console.WriteLine("Landmarks:");
+            foreach (var landmark in landmarks)
+            {
+                Console.WriteLine($" -{landmark.Name} (confidence: {landmark.Confidence:P})");
+            }
+        }
+
+        // Get brands in the image
+        if (analysis.Brands is { Count: > 0 })
+        {
+            Console.WriteLine("Brands:");
+            foreach (var brand in analysis.Brands)
+            {
+                Console.WriteLine($" -{brand.Name} (confidence: {brand.Confidence:P})");
+            }
+        }
+
+        // Get objects in the image
+        if (analysis.Objects is { Count: > 0 })
+        {
+            Console.WriteLine("Objects in image:");
+            foreach (var detectedObject in analysis.Objects)
+            {
+                Console.WriteLine($" -{detectedObject.ObjectProperty} (confidence: {detectedObject.Confidence:P})");
+            }
+        }
+    }
+    private static async Task GetThumbnail(string imageFile)
+    {
+        Console.WriteLine("Generating thumbnail");
+
+        using (var imageData = File.OpenRead(imageFile))
+        {
+            var thumbnailStream = await _cvClient.GenerateThumbnailInStreamAsync(100, 100, imageData, true);
+
+            string thumbnailFileName = "thumbnail.png";
+            using (Stream thumbnailFile = File.Create(thumbnailFileName))
+            {
+                thumbnailStream.CopyTo(thumbnailFile);
+            }
+
+            Console.WriteLine($"Thumbnail saved in {thumbnailFileName}");
+        }
+    }
+    private static async Task GetThumbnailFromUrl(string imageUrl)
+    {
+        Console.WriteLine("Generating thumbnail");
+
+        var thumbnailStream = await _cvClient.GenerateThumbnailAsync(100, 100, imageUrl, true);
+
+        string thumbnailFileName = "thumbnail.png";
+        using (Stream thumbnailFile = File.Create(thumbnailFileName))
+        {
+            thumbnailStream.CopyTo(thumbnailFile);
+        }
+
+        Console.WriteLine($"Thumbnail saved in {thumbnailFileName}");
     }
 
     private async Task AnswerUser(string userQuestion, (string LanguageName, string LanguageIso6391Name) language)
@@ -60,7 +302,6 @@ public class AiServices
         {
             var answerThatNeedsTranslation = Labb1Faq.AnswerFaq(translatedQuestion);
             answer = await TranslateText(answerThatNeedsTranslation, "en", language.LanguageIso6391Name);
-
         }
         else
         {
@@ -71,7 +312,6 @@ public class AiServices
         Console.WriteLine("\nPress any key to continue...");
         Console.ReadKey();
     }
-
     private async Task<string> TranslateText(string textToTranslate, string languageIso6391, string toLanguage = "en")
     {
         if (languageIso6391 == "en" && toLanguage == "en")
@@ -166,5 +406,4 @@ public class AiServices
         return ((string)language["detectedLanguage"]?["name"]!, (string)language["detectedLanguage"]?["iso6391Name"]!);
     }
 }
-
 
